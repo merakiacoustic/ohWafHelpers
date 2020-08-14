@@ -76,7 +76,7 @@ def configure_toolchain(conf):
     import os, sys
     import platform as platform_arch
     platform_info = get_platform_info(conf.options.dest_platform)
-    if platform_info['build_platform'] != sys.platform:
+    if platform_info['build_platform'][:len(sys.platform)] != sys.platform:
         conf.fatal('Can only build for {0} on {1}, but currently running on {2}.'.format(conf.options.dest_platform, platform_info['build_platform'], sys.platform))
     conf.env.MSVC_TARGETS = ['x86']
     if conf.options.dest_platform in ['Windows-x86', 'Windows-x64']:
@@ -366,29 +366,40 @@ def guess_libosa_location(conf):
     )
 
 def guess_ssl_location(conf):
-    set_env_verbose(conf, 'INCLUDES_SSL', match_path(
-        conf,
-        [
-            '{options.ssl}/build/{options.dest_platform}/include',
-            '{options.ssl}/include',
-            'dependencies/{options.dest_platform}/libressl/include',
-        ],
-        message='Specify --ssl')
-    )
-    set_env_verbose(conf, 'STLIBPATH_SSL', match_path(
-        conf,
-        [
-            '{options.ssl}/build/{options.dest_platform}/lib',
-            '{options.ssl}/lib',
-            'dependencies/{options.dest_platform}/libressl/lib',
-        ],
-        message='Specify --ssl')
-    )
-    conf.env.STLIB_SSL = ['ssl', 'crypto']
+    import os
+    if os.path.exists('conanbuildinfo.json'):
+        import json
+        with open('conanbuildinfo.json') as conanbuildinfo_json:
+            conanbuildinfo = json.load(conanbuildinfo_json)
+        config = conanbuildinfo['dependencies'][0]
+        conf.env.INCLUDES_SSL = config['include_paths']
+        conf.env.STLIBPATH_SSL = config['lib_paths']
+        conf.env.STLIB_SSL = [x for x in config['libs'] if 'pthread' not in x]
+    else:
+        set_env_verbose(conf, 'INCLUDES_SSL', match_path(
+            conf,
+            [
+                '{options.ssl}/build/{options.dest_platform}/include',
+                '{options.ssl}/include',
+                'dependencies/{options.dest_platform}/libressl/include',
+            ],
+            message='Specify --ssl')
+        )
+        set_env_verbose(conf, 'STLIBPATH_SSL', match_path(
+            conf,
+            [
+                '{options.ssl}/build/{options.dest_platform}/lib',
+                '{options.ssl}/lib',
+                'dependencies/{options.dest_platform}/libressl/lib',
+                'dependencies/{options.dest_platform}/libressl/{options.dest_platform[-3:]}',
+            ],
+            message='Specify --ssl')
+        )
+        conf.env.STLIB_SSL = ['ssl', 'crypto']
     if conf.options.dest_platform in ['Windows-x86', 'Windows-x64']:
         conf.env.LIB_SSL = ['advapi32']
     elif conf.options.dest_platform.startswith('Linux-'):
-        conf.env.LIB_SSL = ['dl']
+        conf.env.LIB_SSL = ['dl', 'pthread']
 
 def get_ros_tool_path(ctx):
     import os
